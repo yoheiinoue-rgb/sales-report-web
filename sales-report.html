@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>レジ締め・売上報告</title>
+
+<!-- Firebase CDN -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; background: #f0f4f8; color: #333; font-size: 14px; }
+
+  /* ===== HEADER ===== */
+  .header { background: linear-gradient(135deg, #1a73e8, #0d47a1); color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.2); flex-wrap: wrap; }
+  .header h1 { font-size: 18px; flex: 1; min-width: 160px; }
+  .sync-badge { font-size: 11px; padding: 3px 8px; border-radius: 12px; background: rgba(255,255,255,.15); white-space: nowrap; }
+  .store-select { background: rgba(255,255,255,.2); color: #fff; border: 1px solid rgba(255,255,255,.4); border-radius: 6px; padding: 6px 10px; font-size: 14px; cursor: pointer; }
+  .store-select option { background: #1a73e8; color: #fff; }
+  .btn-store-mgr { background: rgba(255,255,255,.2); color: #fff; border: 1px solid rgba(255,255,255,.4); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .btn-store-mgr:hover { background: rgba(255,255,255,.35); }
+
+  /* ===== TABS ===== */
+  .tabs { display: flex; background: #fff; border-bottom: 2px solid #1a73e8; overflow-x: auto; }
+  .tab { padding: 10px 18px; cursor: pointer; white-space: nowrap; font-size: 13px; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all .2s; }
+  .tab.active { color: #1a73e8; border-bottom-color: #1a73e8; font-weight: bold; }
+  .tab:hover { background: #f5f7ff; }
+
+  /* ===== PANELS ===== */
+  .panel { display: none; padding: 16px; max-width: 900px; margin: 0 auto; }
+  .panel.active { display: block; }
+
+  /* ===== CARDS ===== */
+  .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 16px; overflow: hidden; }
+  .card-header { background: #1a73e8; color: #fff; padding: 8px 14px; font-weight: bold; font-size: 13px; }
+  .card-header.green { background: #34a853; }
+  .card-header.orange { background: #f57c00; }
+  .card-header.purple { background: #7b1fa2; }
+  .card-header.teal { background: #00695c; }
+  .card-body { padding: 12px 14px; }
+
+  /* 数値入力の矢印を非表示 */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+
+  /* ===== FORM ELEMENTS ===== */
+  .form-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .form-row label { width: 180px; flex-shrink: 0; font-size: 13px; color: #555; }
+  .form-row input { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; text-align: right; }
+  .form-row input:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.2); }
+  .form-row input[readonly] { background: #e8f0fe; color: #1a73e8; font-weight: bold; cursor: default; border-color: #a8c4fb; }
+  .form-row input.auto-total { background: #fff8e1; font-weight: bold; color: #e65100; border-color: #ffcc02; }
+
+  /* ===== REGISTER TABLE ===== */
+  .reg-table { width: 100%; border-collapse: collapse; }
+  .reg-table th { background: #f5f5f5; text-align: center; padding: 6px; border: 1px solid #ddd; font-size: 12px; }
+  .reg-table td { text-align: center; padding: 4px; border: 1px solid #ddd; }
+  .reg-table input { width: 60px; padding: 4px; text-align: center; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+
+  /* ===== CALENDAR ===== */
+  .cal-nav { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 12px; }
+  .cal-nav button { background: #1a73e8; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 14px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-day-header { text-align: center; font-weight: bold; padding: 6px; font-size: 12px; color: #666; }
+  .cal-day-header.sun { color: #c62828; }
+  .cal-day-header.sat { color: #1565c0; }
+  .cal-cell { border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px; min-height: 70px; background: #fff; cursor: pointer; transition: all .2s; }
+  .cal-cell:hover { border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.2); }
+  .cal-cell.has-data { background: #e8f0fe; border-color: #a8c4fb; }
+  .cal-cell.today-cell { border-color: #1a73e8; border-width: 2px; }
+  .cal-cell.sun-cell .cal-date { color: #c62828; }
+  .cal-cell.sat-cell .cal-date { color: #1565c0; }
+  .cal-cell.empty-cell { background: #fafafa; border-color: #eee; cursor: default; }
+  .cal-date { font-size: 16px; font-weight: bold; }
+  .cal-info { font-size: 11px; color: #555; margin-top: 2px; }
+  .cal-income { font-size: 12px; color: #1a73e8; font-weight: bold; }
+
+  /* ===== MONTHLY TABLE ===== */
+  .monthly-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .monthly-table th { background: #1a73e8; color: #fff; padding: 6px 4px; text-align: center; border: 1px solid #1565c0; white-space: nowrap; }
+  .monthly-table td { padding: 5px 4px; border: 1px solid #ddd; text-align: right; }
+  .monthly-table .day-col { text-align: center; font-weight: bold; }
+  .monthly-table tr:nth-child(even) { background: #f5f7ff; }
+  .monthly-table tr:hover { background: #e8f0fe; }
+  .monthly-table .total-row { background: #fff3e0; font-weight: bold; }
+  .monthly-table .avg-row { background: #e8f5e9; font-weight: bold; }
+  .monthly-table .closed-row { color: #999; }
+
+  /* ===== BUTTONS ===== */
+  .btn { padding: 8px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: all .2s; }
+  .btn-primary { background: #1a73e8; color: #fff; }
+  .btn-primary:hover { background: #1557b0; }
+  .btn-success { background: #34a853; color: #fff; }
+  .btn-success:hover { background: #2d8e47; }
+  .btn-danger { background: #d32f2f; color: #fff; }
+  .btn-danger:hover { background: #b71c1c; }
+  .btn-outline { background: #fff; color: #1a73e8; border: 2px solid #1a73e8; }
+  .btn-outline:hover { background: #e8f0fe; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .action-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+
+  /* ===== MODAL ===== */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; justify-content: center; align-items: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+  .modal h2 { margin-bottom: 16px; color: #1a73e8; }
+  .modal-footer { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+  .store-item { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 8px; }
+  .store-item-row { display: flex; align-items: center; gap: 8px; }
+  .store-item input { flex: 1; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+  .store-item label { font-size: 11px; color: #888; width: 100px; flex-shrink: 0; }
+
+  /* ===== LINE MODAL ===== */
+  .line-modal { background: #fff; border-radius: 16px; padding: 24px; width: 460px; max-width: 94vw; box-shadow: 0 8px 32px rgba(0,0,0,.3); }
+  .line-modal h2 { margin-bottom: 4px; color: #06C755; font-size: 18px; }
+  .line-modal .subtitle { font-size: 12px; color: #888; margin-bottom: 14px; }
+  .line-msg-box { background: #f0f4f8; border-radius: 10px; padding: 14px; font-size: 13px; line-height: 1.8; white-space: pre-wrap; border: 1px solid #ddd; margin-bottom: 14px; max-height: 260px; overflow-y: auto; }
+  .line-btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; border: none; border-radius: 10px; cursor: pointer; font-size: 15px; font-weight: bold; width: 100%; margin-bottom: 8px; }
+  .line-btn-main { background: #06C755; color: #fff; }
+  .line-btn-main:hover { background: #05b34d; }
+  .line-btn-copy { background: #f0f0f0; color: #333; }
+  .line-btn-copy:hover { background: #e0e0e0; }
+  .line-btn-close { background: #fff; color: #999; border: 1px solid #ddd; padding: 8px; font-size: 13px; }
+
+  /* 印刷は別ウィンドウで行うためメインページの@media printは最小限 */
+  @media print {
+    body { display: none; }
+  }
+
+  /* ===== TOAST ===== */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: #333; color: #fff; padding: 10px 24px; border-radius: 24px; font-size: 14px; transition: transform .3s; z-index: 300; pointer-events: none; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .formula-note { font-size: 11px; color: #888; margin-top: 2px; }
+
+  /* loading overlay */
+  .loading-overlay { display: none; position: fixed; inset: 0; background: rgba(255,255,255,.8); z-index: 500; justify-content: center; align-items: center; flex-direction: column; gap: 12px; }
+  .loading-overlay.show { display: flex; }
+  .spinner { width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: #1a73e8; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 600px) {
+    .form-row label { width: 140px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN OVERLAY -->
+<div id="loginOverlay" style="display:flex;position:fixed;inset:0;background:linear-gradient(135deg,#1a73e8,#0d47a1);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:40px 32px;text-align:center;max-width:340px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="font-size:40px;margin-bottom:12px;">📊</div>
+    <h2 style="font-size:20px;font-weight:900;color:#1a73e8;margin-bottom:6px;">売上報告</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:24px;">ログインして続けてください</p>
+    <button onclick="signIn()" style="background:#1a73e8;color:#fff;border:none;border-radius:10px;padding:13px 28px;font-size:15px;font-weight:700;cursor:pointer;width:100%;">🔑 Googleでログイン</button>
+    <p id="loginError" style="color:#c62828;font-size:12px;margin-top:12px;display:none;"></p>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div class="loading-overlay show" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div style="color:#1a73e8;font-weight:bold;">Firebase に接続中...</div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <h1>📊 レジ締め・売上報告</h1>
+  <span class="sync-badge" id="syncStatus">接続中...</span>
+  <select class="store-select" id="storeSelect" onchange="switchStore(this.value)"></select>
+  <button class="btn-store-mgr" onclick="openStoreMgr()">店舗管理</button>
+  <button class="btn-store-mgr" onclick="signOut()" id="logoutBtn" style="display:none;">🚪 ログアウト</button>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="showTab('calendar')">📅 カレンダー</div>
+  <div class="tab" onclick="showTab('entry')">✏️ 日次入力</div>
+  <div class="tab" onclick="showTab('daily-print')">📄 日報</div>
+  <div class="tab" onclick="showTab('monthly')">📈 月次レポート</div>
+  <div class="tab" onclick="showTab('monthly-print')">📋 月報</div>
+</div>
+
+<!-- CALENDAR PANEL -->
+<div class="panel active" id="panel-calendar">
+  <div class="cal-nav">
+    <button onclick="prevMonth()">◀</button>
+    <span id="calTitle" style="font-size:18px;font-weight:bold;"></span>
+    <button onclick="nextMonth()">▶</button>
+  </div>
+  <div class="cal-grid" id="calGrid"></div>
+</div>
+
+<!-- ENTRY PANEL -->
+<div class="panel" id="panel-entry">
+  <div class="action-bar">
+    <button class="btn btn-primary" onclick="saveEntry()">💾 保存</button>
+    <button class="btn btn-warning" onclick="printDaily()">🖨️ 日報印刷</button>
+    <button class="btn btn-danger btn-sm no-print" onclick="deleteEntry()">🗑️ 削除</button>
+  </div>
+
+  <div class="card">
+    <div class="card-header">基本情報</div>
+    <div class="card-body">
+      <div class="form-row">
+        <label>日付</label>
+        <input type="date" id="entryDate" onchange="onDateChange()" style="text-align:left;">
+      </div>
+      <div class="form-row">
+        <label>曜日</label>
+        <input type="text" id="entryDow" readonly style="background:#f5f5f5;text-align:left;max-width:80px;">
+      </div>
+      <div class="form-row">
+        <label>処方箋枚数</label>
+        <input type="number" id="prescriptions" min="0" placeholder="0">
+      </div>
+      <div class="form-row">
+        <label>新規患者数</label>
+        <input type="number" id="newPatients" min="0" placeholder="0">
+      </div>
+      <div class="form-row">
+        <label>帳票売上合計</label>
+        <input type="number" id="bookSales" min="0" placeholder="0" oninput="calcTotalSales()">
+      </div>
+      <div class="form-row">
+        <label>売上総合計（自動）</label>
+        <input type="number" id="totalSales" readonly class="auto-total" placeholder="0">
+      </div>
+      <div class="formula-note" style="padding-left:188px;">帳票売上 ＋ OTC現金 ＋ OTC CL</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header green">① 帳票の入金額</div>
+    <div class="card-body">
+      <div class="form-row">
+        <label>①帳票入金額</label>
+        <input type="number" id="bookIncome" min="0" placeholder="0" oninput="calcExpectedIncome()">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header orange">② キャッシュレス決済</div>
+    <div class="card-body">
+      <div class="form-row"><label>カード</label><input type="number" id="cl_card" min="0" placeholder="0" oninput="calcCLTotal()"></div>
+      <div class="form-row"><label>ID</label><input type="number" id="cl_id" min="0" placeholder="0" oninput="calcCLTotal()"></div>
+      <div class="form-row"><label>IC</label><input type="number" id="cl_ic" min="0" placeholder="0" oninput="calcCLTotal()"></div>
+      <div class="form-row"><label>楽天Edy</label><input type="number" id="cl_edy" min="0" placeholder="0" oninput="calcCLTotal()"></div>
+      <div class="form-row"><label>WAON</label><input type="number" id="cl_waon" min="0" placeholder="0" oninput="calcCLTotal()"></div>
+      <div class="form-row"><label>nanaco</label><input type="number" id="cl_nanaco" min="0" placeholder="0" oninput="calcCLTotal()"></div>
+      <div class="form-row"><label>QUICPay</label><input type="number" id="cl_quicpay" min="0" placeholder="0" oninput="calcCLTotal()"></div>
+      <div class="form-row"><label>QR決済</label><input type="number" id="cl_qr" min="0" placeholder="0" oninput="calcCLTotal()"></div>
+      <div class="form-row" style="border-top:2px solid #f57c00;margin-top:8px;padding-top:8px;">
+        <label>②CL合計（自動）</label>
+        <input type="number" id="cl_total" readonly class="auto-total" placeholder="0">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header purple">③④ OTC売上</div>
+    <div class="card-body">
+      <div class="form-row">
+        <label>③OTC等現金売上</label>
+        <input type="number" id="otcCash" min="0" placeholder="0" oninput="calcTotalSales();calcExpectedIncome()">
+      </div>
+      <div class="form-row">
+        <label>④OTC等CL売上</label>
+        <input type="number" id="otcCL" min="0" placeholder="0" oninput="calcTotalSales();calcExpectedIncome()">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="background:#c62828;">⑤⑥ 返金・未会計</div>
+    <div class="card-body">
+      <div class="form-row">
+        <label>⑤返金合計</label>
+        <input type="number" id="refund" min="0" placeholder="0" oninput="calcExpectedIncome()">
+      </div>
+      <div class="form-row">
+        <label>⑥当日未会計合計</label>
+        <input type="number" id="uncounted" min="0" placeholder="0" oninput="calcExpectedIncome()">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header teal">⑦⑧ 後日会計</div>
+    <div class="card-body">
+      <div class="form-row">
+        <label>⑦後日現金会計</label>
+        <input type="number" id="laterCash" min="0" placeholder="0" oninput="calcExpectedIncome()">
+      </div>
+      <div class="form-row">
+        <label>⑧後日CL会計</label>
+        <input type="number" id="laterCL" min="0" placeholder="0" oninput="calcExpectedIncome()">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header green">入金予定金額（自動計算）</div>
+    <div class="card-body">
+      <div class="form-row">
+        <label>入金予定金額</label>
+        <input type="number" id="expectedIncome" readonly placeholder="0">
+      </div>
+      <div class="formula-note" style="padding-left:188px;">① ＋ ③ ＋ ④ ＋ ⑦ ＋ ⑧ − ② − ⑤ − ⑥</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">レジ金</div>
+    <div class="card-body">
+      <div class="form-row" style="margin-bottom:12px;">
+        <label>基本レジ金</label>
+        <input type="number" id="baseReg" min="0" placeholder="0" oninput="calcRegDiff()">
+      </div>
+      <table class="reg-table">
+        <thead>
+          <tr>
+            <th>10,000</th><th>5,000</th><th>2,000</th><th>1,000</th><th>500</th>
+            <th>100</th><th>50</th><th>10</th><th>5</th><th>1</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><input type="number" id="reg_10000" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_5000" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_2000" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_1000" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_500" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_100" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_50" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_10" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_5" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+            <td><input type="number" id="reg_1" min="0" placeholder="0" oninput="calcRegTotal()"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="form-row" style="margin-top:12px;">
+        <label>レジ金合計（自動）</label>
+        <input type="number" id="reg_total" readonly class="auto-total" placeholder="0">
+      </div>
+      <div class="form-row">
+        <label>レジ金差額（自動）</label>
+        <input type="number" id="reg_diff" readonly placeholder="0">
+      </div>
+      <div class="formula-note" style="padding-left:188px;">レジ金合計 − 基本レジ金</div>
+      <div class="form-row" style="margin-top:6px;">
+        <label>差額の理由</label>
+        <input type="text" id="diffReason" placeholder="例：両替、つり銭不足など" style="text-align:left;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DAILY PRINT PANEL -->
+<div class="panel" id="panel-daily-print">
+  <div class="action-bar no-print">
+    <select id="printDateSelect" class="store-select" style="background:#1a73e8;color:#fff;" onchange="loadPrintData()">
+      <option value="">日付を選択</option>
+    </select>
+    <button class="btn btn-primary" onclick="printDaily()">🖨️ 印刷</button>
+    <button class="btn btn-outline" onclick="showTab('entry')">← 入力に戻る</button>
+  </div>
+  <div id="dailyPrintVisible"></div>
+</div>
+
+<!-- MONTHLY PANEL -->
+<div class="panel" id="panel-monthly">
+  <div class="cal-nav">
+    <button onclick="prevMonthM()">◀</button>
+    <span id="monthlyTitle" style="font-size:18px;font-weight:bold;"></span>
+    <button onclick="nextMonthM()">▶</button>
+    <button class="btn btn-warning no-print" style="margin-left:8px;padding:6px 14px;font-size:13px;" onclick="printMonthly()">🖨️ 月報印刷</button>
+  </div>
+  <div id="monthlyContent"></div>
+</div>
+
+<!-- MONTHLY PRINT PANEL -->
+<div class="panel" id="panel-monthly-print">
+  <div class="action-bar no-print">
+    <button class="btn btn-primary" onclick="printMonthly()">🖨️ 印刷</button>
+    <button class="btn btn-outline" onclick="showTab('monthly')">← レポートに戻る</button>
+  </div>
+  <div id="monthlyPrintContent"></div>
+</div>
+
+<!-- LINE SHARE MODAL -->
+<div class="modal-overlay" id="lineModal">
+  <div class="line-modal">
+    <h2>📱 LINE 自動送信</h2>
+    <p class="subtitle">内容を確認して「LINEに送信」を押してください</p>
+    <div class="line-msg-box" id="lineMsgBox"></div>
+    <div id="lineSendStatus" style="text-align:center;margin-bottom:8px;font-size:13px;min-height:20px;"></div>
+    <button class="line-btn line-btn-main" onclick="sendToLine()" id="lineSendBtn">
+      <svg width="20" height="20" viewBox="0 0 22 22" fill="none"><rect width="22" height="22" rx="5" fill="#fff"/><path d="M11 4C7.13 4 4 6.79 4 10.22c0 2.02 1.1 3.82 2.8 5.0l-.47 1.74a.3.3 0 0 0 .44.33l2.03-1.21c.68.18 1.39.27 2.2.27 3.87 0 7-2.79 7-6.22S14.87 4 11 4z" fill="#06C755"/></svg>
+      LINEに送信
+    </button>
+    <button class="line-btn line-btn-copy" onclick="copyLineMsg()">📋 メッセージをコピー</button>
+    <button class="line-btn line-btn-close" onclick="closeLineModal()">閉じる</button>
+  </div>
+</div>
+
+<!-- STORE MANAGER MODAL -->
+<div class="modal-overlay" id="storeMgrModal">
+  <div class="modal">
+    <h2>🏪 店舗管理</h2>
+    <div id="storeList"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <input type="text" id="newStoreName" placeholder="新しい店舗名" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;">
+      <button class="btn btn-success" onclick="addStore()">追加</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeStoreMgr()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== FIREBASE INIT =====
+const firebaseConfig = {
+  apiKey: "AIzaSyDNo7WA1ja6YYOYteOa21tAZ9XEM1ZorZU",
+  authDomain: "pharmacy-sales-report.firebaseapp.com",
+  projectId: "pharmacy-sales-report",
+  storageBucket: "pharmacy-sales-report.firebasestorage.app",
+  messagingSenderId: "39392109803",
+  appId: "1:39392109803:web:ba230b5062fcfa28a5caae"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+const provider = new firebase.auth.GoogleAuthProvider();
+
+const ALLOWED_EMAILS = [
+  "clannad.yohei.inoue@gmail.com",
+  "sumire.veg@gmail.com",
+  "723baba@gmail.com",
+  "clover.sumire.723@gmail.com",
+  "lion.tutuji@gmail.com"
+];
+
+function signIn() {
+  auth.signInWithPopup(provider).catch(err => {
+    document.getElementById('loginError').textContent = 'ログインに失敗しました: ' + err.message;
+    document.getElementById('loginError').style.display = 'block';
+  });
+}
+function signOut() {
+  auth.signOut();
+}
+
+auth.onAuthStateChanged(user => {
+  if (user) {
+    if (!ALLOWED_EMAILS.includes(user.email)) {
+      const errEl = document.getElementById('loginError');
+      errEl.textContent = `${user.email} はアクセス権がありません。`;
+      errEl.style.display = 'block';
+      auth.signOut();
+      return;
+    }
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('logoutBtn').style.display = '';
+    init();
+  } else {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('logoutBtn').style.display = 'none';
+  }
+});
+const storesCol = db.collection('stores');
+const entriesCol = db.collection('entries');
+const monthlyExtrasCol = db.collection('monthly_extras');
+
+// ===== CONSTANTS =====
+const DENOMS = [10000, 5000, 2000, 1000, 500, 100, 50, 10, 5, 1];
+const DAYS_JA = ['日','月','火','水','木','金','土'];
+const ENTRY_FIELDS = ['prescriptions','newPatients','bookSales','bookIncome',
+  'cl_card','cl_id','cl_ic','cl_edy','cl_waon','cl_nanaco','cl_quicpay','cl_qr',
+  'otcCash','otcCL','refund','uncounted','laterCash','laterCL','baseReg',
+  ...DENOMS.map(d => 'reg_'+d)];
+
+// ===== STATE =====
+let currentStoreId = '';
+let currentYear = new Date().getFullYear();
+let currentMonth = new Date().getMonth();
+let monthlyYear = new Date().getFullYear();
+let monthlyMonth = new Date().getMonth();
+
+// ===== IN-MEMORY CACHE =====
+let storesCache = [];
+let entriesCache = {}; // { storeId: { dateStr: entryData } }
+let entriesUnsubscribe = null;
+
+// ===== SYNC STATUS =====
+function setSyncStatus(status) {
+  const el = document.getElementById('syncStatus');
+  const map = {
+    connecting: { text: '接続中...', color: '#ffa726' },
+    synced:     { text: '同期済み ✓', color: '#69f0ae' },
+    saving:     { text: '保存中...', color: '#ffa726' },
+    error:      { text: '接続エラー ✗', color: '#ef5350' }
+  };
+  const s = map[status] || map.synced;
+  el.textContent = s.text;
+  el.style.color = s.color;
+}
+
+// ===== STORE MANAGEMENT =====
+function initStores() {
+  setSyncStatus('connecting');
+  storesCol.onSnapshot(snapshot => {
+    if (snapshot.empty) {
+      const id = 'store_' + Date.now();
+      storesCol.doc(id).set({ id, name: 'なつめ薬局' });
+      return;
+    }
+    storesCache = snapshot.docs.map(d => d.data()).sort((a,b) => a.name.localeCompare(b.name, 'ja'));
+
+    const savedId = localStorage.getItem('currentStoreId');
+    if (!currentStoreId || !storesCache.find(s => s.id === currentStoreId)) {
+      currentStoreId = (savedId && storesCache.find(s => s.id === savedId))
+        ? savedId : storesCache[0].id;
+    }
+    refreshStoreSelect();
+    listenToStoreEntries(currentStoreId);
+    document.getElementById('loadingOverlay').classList.remove('show');
+    setSyncStatus('synced');
+  }, err => {
+    console.error('Stores error:', err);
+    setSyncStatus('error');
+    document.getElementById('loadingOverlay').classList.remove('show');
+  });
+}
+
+function getStores() { return storesCache; }
+
+function refreshStoreSelect() {
+  const sel = document.getElementById('storeSelect');
+  sel.innerHTML = storesCache.map(s =>
+    `<option value="${s.id}"${s.id === currentStoreId ? ' selected' : ''}>${s.name}</option>`
+  ).join('');
+}
+
+function switchStore(id) {
+  currentStoreId = id;
+  localStorage.setItem('currentStoreId', id);
+  listenToStoreEntries(id);
+}
+
+function openStoreMgr() {
+  renderStoreList();
+  document.getElementById('storeMgrModal').classList.add('open');
+}
+function closeStoreMgr() {
+  document.getElementById('storeMgrModal').classList.remove('open');
+}
+function renderStoreList() {
+  document.getElementById('storeList').innerHTML = storesCache.map(s => `
+    <div class="store-item">
+      <div class="store-item-row">
+        <label>店舗名</label>
+        <input type="text" value="${s.name}" onchange="updateStore('${s.id}', 'name', this.value)">
+        ${storesCache.length > 1 ? `<button class="btn btn-danger btn-sm" onclick="deleteStore('${s.id}')">削除</button>` : ''}
+      </div>
+      <div class="store-item-row">
+        <label>LINEトークン</label>
+        <input type="text" value="${s.lineToken||''}" placeholder="チャンネルアクセストークン" onchange="updateStore('${s.id}', 'lineToken', this.value)">
+      </div>
+      <div class="store-item-row">
+        <label>LINE User ID</label>
+        <input type="text" value="${s.lineUserId||''}" placeholder="Uxxxxxxxxxxxxxxxx" onchange="updateStore('${s.id}', 'lineUserId', this.value)">
+      </div>
+    </div>
+  `).join('');
+}
+function addStore() {
+  const name = document.getElementById('newStoreName').value.trim();
+  if (!name) return;
+  const id = 'store_' + Date.now();
+  storesCol.doc(id).set({ id, name, lineToken: '', lineUserId: '' }).then(() => {
+    document.getElementById('newStoreName').value = '';
+    showToast('店舗を追加しました');
+  }).catch(err => { console.error(err); showToast('エラーが発生しました'); });
+}
+function updateStore(id, field, value) {
+  storesCol.doc(id).update({ [field]: value });
+}
+function renameStore(id, name) {
+  storesCol.doc(id).update({ name });
+}
+function deleteStore(id) {
+  if (!confirm('この店舗を削除しますか？')) return;
+  storesCol.doc(id).delete().then(() => {
+    if (currentStoreId === id) {
+      const remaining = storesCache.filter(s => s.id !== id);
+      currentStoreId = remaining[0]?.id || '';
+      localStorage.setItem('currentStoreId', currentStoreId);
+    }
+    closeStoreMgr();
+    showToast('店舗を削除しました');
+  });
+}
+
+// ===== ENTRY LISTENERS =====
+function listenToStoreEntries(storeId) {
+  if (entriesUnsubscribe) entriesUnsubscribe();
+  if (!entriesCache[storeId]) entriesCache[storeId] = {};
+
+  setSyncStatus('connecting');
+  entriesUnsubscribe = entriesCol
+    .where('storeId', '==', storeId)
+    .onSnapshot(snapshot => {
+      if (!entriesCache[storeId]) entriesCache[storeId] = {};
+      snapshot.docChanges().forEach(change => {
+        const data = change.doc.data();
+        if (change.type === 'removed') {
+          delete entriesCache[storeId][data.date];
+        } else {
+          entriesCache[storeId][data.date] = data;
+        }
+      });
+      renderCalendar();
+      renderMonthly();
+      if (document.getElementById('panel-daily-print').classList.contains('active')) {
+        renderDailyPrint();
+      }
+      setSyncStatus('synced');
+    }, err => {
+      console.error('Entries error:', err);
+      setSyncStatus('error');
+    });
+}
+
+// ===== DATA ACCESS =====
+function getEntry(storeId, dateStr) {
+  return entriesCache[storeId]?.[dateStr] || null;
+}
+function getAllEntries(storeId) {
+  return Object.values(entriesCache[storeId] || {});
+}
+function getMonthEntries(storeId, year, month) {
+  const prefix = `${year}-${String(month+1).padStart(2,'0')}-`;
+  return Object.values(entriesCache[storeId] || {})
+    .filter(e => e.date && e.date.startsWith(prefix))
+    .sort((a,b) => a.date.localeCompare(b.date));
+}
+
+// ===== TABS =====
+function showTab(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  const tabs = ['calendar','entry','daily-print','monthly','monthly-print'];
+  const idx = tabs.indexOf(name);
+  if (idx >= 0) document.querySelectorAll('.tab')[idx].classList.add('active');
+
+  if (name === 'calendar') renderCalendar();
+  if (name === 'daily-print') renderDailyPrint();
+  if (name === 'monthly') renderMonthly();
+  if (name === 'monthly-print') renderMonthlyPrint();
+}
+
+// ===== CALENDAR =====
+function renderCalendar() {
+  const y = currentYear, m = currentMonth;
+  document.getElementById('calTitle').textContent = `${y}年${m+1}月`;
+  const first = new Date(y, m, 1);
+  const last = new Date(y, m+1, 0);
+  const today = new Date();
+
+  let html = DAYS_JA.map((d,i) =>
+    `<div class="cal-day-header ${i===0?'sun':i===6?'sat':''}">${d}</div>`
+  ).join('');
+
+  for (let i = 0; i < first.getDay(); i++) {
+    html += '<div class="cal-cell empty-cell"></div>';
+  }
+  for (let d = 1; d <= last.getDate(); d++) {
+    const dt = new Date(y, m, d);
+    const dow = dt.getDay();
+    const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const entry = getEntry(currentStoreId, dateStr);
+    const isToday = dt.toDateString() === today.toDateString();
+    const cls = ['cal-cell', dow===0?'sun-cell':'', dow===6?'sat-cell':'', entry?'has-data':'', isToday?'today-cell':''].filter(Boolean).join(' ');
+    html += `<div class="${cls}" onclick="openEntry('${dateStr}')">
+      <div class="cal-date">${d}</div>
+      ${entry?.prescriptions ? `<div class="cal-info">処方 ${entry.prescriptions}枚</div>` : ''}
+      ${entry?.expectedIncome != null ? `<div class="cal-income">¥${fmt(entry.expectedIncome)}</div>` : ''}
+    </div>`;
+  }
+  document.getElementById('calGrid').innerHTML = html;
+}
+function prevMonth() { currentMonth--; if(currentMonth<0){currentMonth=11;currentYear--;} renderCalendar(); }
+function nextMonth() { currentMonth++; if(currentMonth>11){currentMonth=0;currentYear++;} renderCalendar(); }
+function openEntry(dateStr) {
+  showTab('entry');
+  document.getElementById('entryDate').value = dateStr;
+  onDateChange();
+  loadEntry(dateStr);
+}
+
+// ===== ENTRY FORM =====
+function onDateChange() {
+  const dateStr = document.getElementById('entryDate').value;
+  if (!dateStr) return;
+  const dt = new Date(dateStr + 'T00:00:00');
+  document.getElementById('entryDow').value = DAYS_JA[dt.getDay()] + '曜日';
+  loadEntry(dateStr);
+}
+function loadEntry(dateStr) {
+  const entry = getEntry(currentStoreId, dateStr);
+  ENTRY_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = entry?.[id] ?? '';
+  });
+  document.getElementById('diffReason').value = entry?.diffReason ?? '';
+  calcAll();
+}
+function getFormData() {
+  const dateStr = document.getElementById('entryDate').value;
+  if (!dateStr) return null;
+  const data = { storeId: currentStoreId, date: dateStr };
+  ENTRY_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) data[id] = el.value === '' ? '' : Number(el.value);
+  });
+  data.cl_total = num('cl_total');
+  data.reg_total = num('reg_total');
+  data.reg_diff = num('reg_diff');
+  data.totalSales = num('totalSales');
+  data.expectedIncome = num('expectedIncome');
+  data.diffReason = document.getElementById('diffReason')?.value ?? '';
+  return data;
+}
+function saveEntry() {
+  const data = getFormData();
+  if (!data || !data.date) { showToast('日付を入力してください'); return; }
+  setSyncStatus('saving');
+  const docId = `${currentStoreId}_${data.date}`;
+  entriesCol.doc(docId).set(data)
+    .then(() => {
+      showToast('保存しました ✓');
+      setSyncStatus('synced');
+      showLineModal(data);
+    })
+    .catch(err => { console.error(err); showToast('保存エラー'); setSyncStatus('error'); });
+}
+
+// ===== LINE SHARE =====
+function buildLineMessage(data) {
+  const storeName = getStores().find(s => s.id === currentStoreId)?.name || '';
+  const dt = new Date(data.date + 'T00:00:00');
+  const dow = DAYS_JA[dt.getDay()];
+  const diff = Number(data.reg_diff || 0);
+  const diffSign = diff >= 0 ? '+' : '';
+  const lines = [
+    `【日次報告】${storeName}`,
+    `📅 ${data.date}（${dow}）`,
+    `────────────────`,
+    `💊 処方箋：${data.prescriptions || 0}枚`,
+    `🆕 新規患者：${data.newPatients || 0}人`,
+    `💰 売上総合計：¥${fmt(data.totalSales)}`,
+    `🏧 レジ金差額：${diffSign}¥${fmt(diff)}`,
+  ];
+  if (data.diffReason) lines.push(`📝 差額の理由：${data.diffReason}`);
+  lines.push(`────────────────`);
+  lines.push(`✅ 保存完了`);
+  return lines.join('\n');
+}
+function showLineModal(data) {
+  document.getElementById('lineMsgBox').textContent = buildLineMessage(data);
+  document.getElementById('lineModal').classList.add('open');
+  document.getElementById('lineModal')._data = data;
+}
+function closeLineModal() {
+  document.getElementById('lineModal').classList.remove('open');
+}
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw4kVhk7DFRaJF6m12Eb2Kt-URLxJzkpumEkM8R6sXQHmuWlIgPjZdsiqIkqJSxruvJ/exec';
+
+function sendToLine() {
+  const msg = document.getElementById('lineMsgBox').textContent;
+  const btn = document.getElementById('lineSendBtn');
+  const status = document.getElementById('lineSendStatus');
+  const store = storesCache.find(s => s.id === currentStoreId);
+  const token  = store?.lineToken  || '';
+  const userId = store?.lineUserId || '';
+  if (!token || !userId) {
+    status.innerHTML = '<span style="color:#c62828;">❌ 店舗管理でLINEトークンとUser IDを設定してください</span>';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+  status.textContent = '';
+  fetch(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: msg, token, userId }),
+    mode: 'no-cors'
+  })
+  .then(() => {
+    status.innerHTML = '<span style="color:#06C755;font-weight:bold;">✅ LINEに送信しました！</span>';
+    btn.textContent = '✅ 送信完了';
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 22 22" fill="none"><rect width="22" height="22" rx="5" fill="#fff"/><path d="M11 4C7.13 4 4 6.79 4 10.22c0 2.02 1.1 3.82 2.8 5.0l-.47 1.74a.3.3 0 0 0 .44.33l2.03-1.21c.68.18 1.39.27 2.2.27 3.87 0 7-2.79 7-6.22S14.87 4 11 4z" fill="#06C755"/></svg> LINEに送信';
+    }, 3000);
+  })
+  .catch(err => {
+    console.error(err);
+    status.innerHTML = '<span style="color:#c62828;">❌ 送信エラー</span>';
+    btn.disabled = false;
+    btn.textContent = 'LINEに送信';
+  });
+}
+
+function openLineShare() {
+  const msg = document.getElementById('lineMsgBox').textContent;
+  const url = 'https://line.me/R/msg/text/?' + encodeURIComponent(msg);
+  window.open(url, '_blank');
+}
+function copyLineMsg() {
+  const msg = document.getElementById('lineMsgBox').textContent;
+  navigator.clipboard.writeText(msg)
+    .then(() => showToast('コピーしました ✓'))
+    .catch(() => showToast('コピーに失敗しました'));
+}
+function deleteEntry() {
+  const dateStr = document.getElementById('entryDate').value;
+  if (!dateStr) return;
+  if (!confirm('この日のデータを削除しますか？')) return;
+  const docId = `${currentStoreId}_${dateStr}`;
+  entriesCol.doc(docId).delete()
+    .then(() => { showToast('削除しました'); clearForm(); })
+    .catch(err => { console.error(err); showToast('削除エラー'); });
+}
+function clearForm() {
+  [...ENTRY_FIELDS, 'cl_total','reg_total','reg_diff','totalSales','expectedIncome']
+    .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  document.getElementById('diffReason').value = '';
+}
+
+// ===== CALCULATIONS =====
+function num(id) { return Number(document.getElementById(id)?.value || 0); }
+function setVal(id, val) { const el = document.getElementById(id); if(el) el.value = val || 0; }
+
+function calcCLTotal() {
+  const total = ['cl_card','cl_id','cl_ic','cl_edy','cl_waon','cl_nanaco','cl_quicpay','cl_qr']
+    .reduce((s,id) => s + num(id), 0);
+  setVal('cl_total', total);
+  calcExpectedIncome();
+}
+function calcTotalSales() {
+  setVal('totalSales', num('bookSales') + num('otcCash') + num('otcCL'));
+}
+function calcExpectedIncome() {
+  // ①帳票入金 + ③OTC現金 + ④OTC CL + ⑦後日現金 + ⑧後日CL − ②CL合計 − ⑤返金 − ⑥未会計
+  const total = num('bookIncome') + num('otcCash') + num('otcCL')
+              + num('laterCash') + num('laterCL')
+              - num('cl_total') - num('refund') - num('uncounted');
+  setVal('expectedIncome', total);
+}
+function calcRegTotal() {
+  const total = DENOMS.reduce((s,d) => s + num('reg_'+d) * d, 0);
+  setVal('reg_total', total);
+  calcRegDiff();
+}
+function calcRegDiff() {
+  const diff = num('reg_total') - num('baseReg');
+  const el = document.getElementById('reg_diff');
+  if (el) {
+    el.value = diff;
+    el.style.cssText = diff >= 0
+      ? 'flex:1;padding:6px 8px;border:1px solid #81c995;border-radius:6px;font-size:14px;text-align:right;background:#e6f4ea;color:#137333;font-weight:bold;cursor:default;'
+      : 'flex:1;padding:6px 8px;border:1px solid #ef9a9a;border-radius:6px;font-size:14px;text-align:right;background:#fce8e6;color:#c62828;font-weight:bold;cursor:default;';
+  }
+}
+function calcAll() { calcCLTotal(); calcTotalSales(); calcRegTotal(); }
+
+// ===== DAILY PRINT =====
+function renderDailyPrint() {
+  const sel = document.getElementById('printDateSelect');
+  const entries = getAllEntries(currentStoreId).sort((a,b) => b.date.localeCompare(a.date));
+  sel.innerHTML = '<option value="">-- 日付を選択 --</option>' +
+    entries.map(e => `<option value="${e.date}">${e.date}</option>`).join('');
+
+  // 入力フォームの日付に一致するエントリがあればそれを選択、なければ最新を選択
+  const entryDate = document.getElementById('entryDate').value;
+  if (entryDate && entries.find(e => e.date === entryDate)) {
+    sel.value = entryDate;
+  } else if (entries.length > 0) {
+    sel.value = entries[0].date;
+  }
+  loadPrintData();
+}
+function loadPrintData() {
+  const dateStr = document.getElementById('printDateSelect').value;
+  if (!dateStr) {
+    document.getElementById('dailyPrintVisible').innerHTML =
+      '<p style="color:#999;text-align:center;padding:40px;">日付を選択してください</p>';
+    return;
+  }
+  const entry = getEntry(currentStoreId, dateStr);
+  if (!entry) {
+    document.getElementById('dailyPrintVisible').innerHTML =
+      '<p style="color:#999;text-align:center;padding:40px;">データがありません</p>';
+    return;
+  }
+  const storeName = getStores().find(s => s.id === currentStoreId)?.name || '';
+  document.getElementById('dailyPrintVisible').innerHTML = buildDailyPrintHTML(entry, storeName);
+}
+function buildDailyPrintHTML(e, storeName) {
+  const dt = new Date(e.date + 'T00:00:00');
+  const dow = DAYS_JA[dt.getDay()];
+  const diff = Number(e.reg_diff || 0);
+  const diffStyle = diff >= 0 ? 'color:#137333;font-weight:bold;' : 'color:#c62828;font-weight:bold;';
+  const th2 = `style="background:#1a73e8;color:#fff;padding:3px 5px;text-align:left;"`;
+  const td1 = `style="border:1px solid #ddd;padding:3px 5px;width:180px;"`;
+  const td2 = `style="border:1px solid #ddd;padding:3px 5px;text-align:right;"`;
+  return `<div style="font-family:sans-serif;max-width:680px;margin:0 auto;padding:4px;">
+  <div style="text-align:center;font-size:16px;font-weight:bold;border-bottom:2px solid #1a73e8;padding-bottom:4px;margin-bottom:8px;">
+    日次売上報告書<br><span style="font-size:12px;">${storeName} ／ ${e.date}（${dow}）</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+    <tr><th colspan="2" ${th2}>基本情報</th></tr>
+    <tr><td ${td1}>処方箋枚数</td><td ${td2}>${fmt(e.prescriptions)}枚</td></tr>
+    <tr><td ${td1}>新規患者数</td><td ${td2}>${fmt(e.newPatients)}人</td></tr>
+    <tr><td ${td1}>帳票売上合計</td><td ${td2}>¥${fmt(e.bookSales)}</td></tr>
+    <tr><td ${td1}><strong>売上総合計</strong></td><td style="border:1px solid #ddd;padding:3px 5px;text-align:right;font-weight:bold;font-size:13px;color:#e65100;">¥${fmt(e.totalSales)}</td></tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+    <tr><th colspan="2" style="background:#34a853;color:#fff;padding:3px 5px;text-align:left;">① 帳票の入金額</th></tr>
+    <tr><td ${td1}>帳票入金額</td><td ${td2}>¥${fmt(e.bookIncome)}</td></tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+    <tr><th colspan="2" style="background:#f57c00;color:#fff;padding:3px 5px;text-align:left;">② キャッシュレス決済</th></tr>
+    ${[['カード','cl_card'],['ID','cl_id'],['IC','cl_ic'],['楽天Edy','cl_edy'],['WAON','cl_waon'],['nanaco','cl_nanaco'],['QUICPay','cl_quicpay'],['QR決済','cl_qr']].map(([n,k])=>
+      `<tr><td ${td1}>${n}</td><td ${td2}>¥${fmt(e[k])}</td></tr>`).join('')}
+    <tr style="background:#fff3e0;"><td ${td1}><strong>②CL合計</strong></td><td style="border:1px solid #ddd;padding:3px 5px;text-align:right;font-weight:bold;">¥${fmt(e.cl_total)}</td></tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+    <tr><th colspan="2" style="background:#7b1fa2;color:#fff;padding:3px 5px;text-align:left;">③④ OTC売上</th></tr>
+    <tr><td ${td1}>③OTC等現金売上</td><td ${td2}>¥${fmt(e.otcCash)}</td></tr>
+    <tr><td ${td1}>④OTC等CL売上</td><td ${td2}>¥${fmt(e.otcCL)}</td></tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+    <tr><th colspan="2" style="background:#c62828;color:#fff;padding:3px 5px;text-align:left;">⑤⑥ 返金・未会計</th></tr>
+    <tr><td ${td1}>⑤返金合計</td><td ${td2}>¥${fmt(e.refund)}</td></tr>
+    <tr><td ${td1}>⑥当日未会計合計</td><td ${td2}>¥${fmt(e.uncounted)}</td></tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+    <tr><th colspan="2" style="background:#00695c;color:#fff;padding:3px 5px;text-align:left;">⑦⑧ 後日会計</th></tr>
+    <tr><td ${td1}>⑦後日現金会計</td><td ${td2}>¥${fmt(e.laterCash)}</td></tr>
+    <tr><td ${td1}>⑧後日CL会計</td><td ${td2}>¥${fmt(e.laterCL)}</td></tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+    <tr><th colspan="2" style="background:#34a853;color:#fff;padding:3px 5px;text-align:left;">入金予定金額（① ＋ ③ ＋ ④ ＋ ⑦ ＋ ⑧ − ② − ⑤ − ⑥）</th></tr>
+    <tr><td ${td1}><strong>入金予定金額</strong></td><td style="border:1px solid #ddd;padding:4px 5px;text-align:right;font-size:15px;font-weight:bold;color:#137333;">¥${fmt(e.expectedIncome)}</td></tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+    <tr><th colspan="2" style="background:#555;color:#fff;padding:3px 5px;text-align:left;">レジ金</th></tr>
+    <tr><td ${td1}>基本レジ金</td><td ${td2}>¥${fmt(e.baseReg)}</td></tr>
+    <tr><td colspan="2" style="border:1px solid #ddd;padding:2px 4px;">
+      <table style="width:100%;border-collapse:collapse;font-size:10px;">
+        <tr>${DENOMS.map(d=>`<th style="border:1px solid #eee;padding:2px;text-align:center;background:#f5f5f5;">${d>=1000?d/1000+'千':d}</th>`).join('')}</tr>
+        <tr>${DENOMS.map(d=>`<td style="border:1px solid #eee;padding:2px;text-align:center;">${e['reg_'+d]||0}</td>`).join('')}</tr>
+      </table>
+    </td></tr>
+    <tr><td ${td1}>レジ金合計</td><td ${td2}>¥${fmt(e.reg_total)}</td></tr>
+    <tr><td ${td1}><strong>レジ金差額</strong></td><td style="border:1px solid #ddd;padding:3px 5px;text-align:right;${diffStyle}">${diff>=0?'+':''}¥${fmt(diff)}</td></tr>
+    ${e.diffReason ? `<tr><td ${td1}>差額の理由</td><td style="border:1px solid #ddd;padding:3px 5px;text-align:left;">${e.diffReason}</td></tr>` : ''}
+  </table>
+</div>`;
+}
+
+// ===== MONTHLY EXTRAS (薬剤費用) =====
+function getMedCostKey() {
+  return `${currentStoreId}_${monthlyYear}_${String(monthlyMonth+1).padStart(2,'0')}`;
+}
+
+function calcMedDiff() {
+  const used = Number(document.getElementById('usedMedCost')?.value || 0);
+  const ordered = Number(document.getElementById('orderedMedCost')?.value || 0);
+  const diff = used - ordered;
+  const el = document.getElementById('medDiff');
+  if (!el) return;
+  el.value = (diff >= 0 ? '+' : '') + diff.toLocaleString('ja-JP');
+  el.style.color = diff >= 0 ? '#1a73e8' : '#c62828';
+}
+
+function loadMedCost() {
+  const key = getMedCostKey();
+  monthlyExtrasCol.doc(key).get().then(doc => {
+    const data = doc.exists ? doc.data() : {};
+    const u = document.getElementById('usedMedCost');
+    const o = document.getElementById('orderedMedCost');
+    if (u) u.value = data.usedMedCost != null ? data.usedMedCost : '';
+    if (o) o.value = data.orderedMedCost != null ? data.orderedMedCost : '';
+    calcMedDiff();
+  }).catch(() => {});
+}
+
+function saveMedCost() {
+  const used = Number(document.getElementById('usedMedCost')?.value || 0);
+  const ordered = Number(document.getElementById('orderedMedCost')?.value || 0);
+  const diff = used - ordered;
+  const key = getMedCostKey();
+  monthlyExtrasCol.doc(key).set({ usedMedCost: used, orderedMedCost: ordered, diff })
+    .then(() => showToast('薬剤費用を保存しました ✓'))
+    .catch(() => showToast('保存エラー'));
+}
+
+// ===== MONTHLY REPORT =====
+function prevMonthM() { monthlyMonth--; if(monthlyMonth<0){monthlyMonth=11;monthlyYear--;} renderMonthly(); }
+function nextMonthM() { monthlyMonth++; if(monthlyMonth>11){monthlyMonth=0;monthlyYear++;} renderMonthly(); }
+
+function buildMonthlyData(storeId, year, month) {
+  const entries = getMonthEntries(storeId, year, month);
+  const entryMap = {};
+  entries.forEach(e => { entryMap[e.date] = e; });
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const totals = { prescriptions:0, newPatients:0, bookSales:0, totalSales:0, bookIncome:0,
+    cl_total:0, otcCash:0, otcCL:0, refund:0, uncounted:0, laterCash:0, laterCL:0, expectedIncome:0 };
+  let businessDays = 0, rxDays = 0;
+  const days = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dt = new Date(dateStr + 'T00:00:00');
+    const e = entryMap[dateStr];
+    const isClosed = !e || (!e.bookIncome && !e.prescriptions);
+    if (e && !isClosed) {
+      businessDays++;
+      if (e.prescriptions > 0) rxDays++;
+      Object.keys(totals).forEach(k => { totals[k] += Number(e[k] || 0); });
+    }
+    days.push({ d, dt, dateStr, e, isClosed });
+  }
+  return { days, totals, businessDays, rxDays };
+}
+
+function renderMonthly() {
+  const y = monthlyYear, m = monthlyMonth;
+  document.getElementById('monthlyTitle').textContent = `${y}年${m+1}月`;
+  const { days, totals, businessDays, rxDays } = buildMonthlyData(currentStoreId, y, m);
+  const avgRx = rxDays > 0 ? Math.round(totals.prescriptions / rxDays) : 0;
+
+  let rows = days.map(({ d, dt, e, isClosed }) => {
+    const dow = dt.getDay();
+    const dowStr = DAYS_JA[dow];
+    const c = dow===0?'color:#c62828':dow===6?'color:#1565c0':'';
+    if (e) {
+      return `<tr>
+        <td class="day-col" style="${c}">${d}（${dowStr}）</td>
+        <td>${e.prescriptions||0}</td>
+        <td>${e.newPatients||0}</td>
+        <td>¥${fmt(e.bookSales)}</td>
+        <td style="font-weight:bold;">¥${fmt(e.totalSales)}</td>
+        <td>¥${fmt(e.bookIncome)}</td>
+        <td>¥${fmt(e.cl_total)}</td>
+        <td>¥${fmt(e.otcCash)}</td>
+        <td>¥${fmt(e.otcCL)}</td>
+        <td>¥${fmt(e.refund)}</td>
+        <td>¥${fmt(e.uncounted)}</td>
+        <td>¥${fmt(e.laterCash)}</td>
+        <td>¥${fmt(e.laterCL)}</td>
+        <td style="font-weight:bold;color:#137333;">¥${fmt(e.expectedIncome)}</td>
+      </tr>`;
+    }
+    return `<tr class="closed-row"><td class="day-col" style="${c}">${d}（${dowStr}）</td><td colspan="13" style="text-align:center;color:#ccc;">—</td></tr>`;
+  }).join('');
+
+  document.getElementById('monthlyContent').innerHTML = `
+<div style="overflow-x:auto;">
+<table class="monthly-table">
+  <thead><tr>
+    <th>日付</th><th>処方箋</th><th>新規患者</th><th>帳票売上</th><th>売上総合計</th>
+    <th>①帳票入金</th><th>②CL合計</th><th>③OTC現金</th><th>④OTC CL</th>
+    <th>⑤返金</th><th>⑥未会計</th><th>⑦後日現金</th><th>⑧後日CL</th><th>入金予定</th>
+  </tr></thead>
+  <tbody>${rows}
+    <tr class="total-row">
+      <td class="day-col">合計（${businessDays}日）</td>
+      <td>${totals.prescriptions}</td>
+      <td>${totals.newPatients}</td>
+      <td>¥${fmt(totals.bookSales)}</td>
+      <td style="font-weight:bold;">¥${fmt(totals.totalSales)}</td>
+      <td>¥${fmt(totals.bookIncome)}</td>
+      <td>¥${fmt(totals.cl_total)}</td>
+      <td>¥${fmt(totals.otcCash)}</td>
+      <td>¥${fmt(totals.otcCL)}</td>
+      <td>¥${fmt(totals.refund)}</td>
+      <td>¥${fmt(totals.uncounted)}</td>
+      <td>¥${fmt(totals.laterCash)}</td>
+      <td>¥${fmt(totals.laterCL)}</td>
+      <td style="font-weight:bold;color:#137333;">¥${fmt(totals.expectedIncome)}</td>
+    </tr>
+    <tr class="avg-row">
+      <td class="day-col">1日平均<br><small>（処方日${rxDays}日）</small></td>
+      <td style="color:#1a73e8;font-weight:bold;">${avgRx}枚/日</td>
+      <td colspan="12"></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+  <button class="btn btn-primary no-print" onclick="showTab('monthly-print');renderMonthlyPrint()">🖨️ 印刷プレビュー</button>
+</div>
+<div class="card" style="margin-top:16px;">
+  <div class="card-header" style="background:#00695c;">💊 薬剤費用</div>
+  <div class="card-body">
+    <div class="form-row">
+      <label>使用薬剤費用</label>
+      <input type="number" id="usedMedCost" placeholder="0" oninput="calcMedDiff()" style="text-align:right;">
+      <span style="font-size:13px;color:#555;white-space:nowrap;">円</span>
+    </div>
+    <div class="form-row">
+      <label>発注薬剤費用</label>
+      <input type="number" id="orderedMedCost" placeholder="0" oninput="calcMedDiff()" style="text-align:right;">
+      <span style="font-size:13px;color:#555;white-space:nowrap;">円</span>
+    </div>
+    <div class="form-row">
+      <label>差額（使用 − 発注）</label>
+      <input type="text" id="medDiff" readonly style="text-align:right;background:#e8f0fe;color:#1a73e8;font-weight:bold;border-color:#a8c4fb;">
+      <span style="font-size:13px;color:#555;white-space:nowrap;">円</span>
+    </div>
+    <div style="margin-top:8px;display:flex;justify-content:flex-end;">
+      <button class="btn btn-success" onclick="saveMedCost()">💾 保存</button>
+    </div>
+  </div>
+</div>`;
+  // Firestoreから薬剤費用データを読み込む
+  loadMedCost();
+}
+
+// ===== MONTHLY PRINT =====
+function renderMonthlyPrint() {
+  const y = monthlyYear, m = monthlyMonth;
+  const storeName = getStores().find(s => s.id === currentStoreId)?.name || '';
+  const { days, totals, businessDays, rxDays } = buildMonthlyData(currentStoreId, y, m);
+  const avgRx = rxDays > 0 ? Math.round(totals.prescriptions / rxDays) : 0;
+  const th = `style="background:#1a73e8;color:#fff;padding:5px 4px;border:1px solid #1565c0;text-align:center;"`;
+  const td = `style="border:1px solid #ddd;padding:5px;text-align:right;"`;
+
+  // 薬剤費用データを取得して印刷コンテンツを構築
+  const key = getMedCostKey();
+  monthlyExtrasCol.doc(key).get().then(doc => {
+    const med = doc.exists ? doc.data() : {};
+    _buildMonthlyPrintHTML(y, m, storeName, days, totals, businessDays, rxDays, avgRx, th, td, med);
+  }).catch(() => {
+    _buildMonthlyPrintHTML(y, m, storeName, days, totals, businessDays, rxDays, avgRx, th, td, {});
+  });
+}
+
+function _buildMonthlyPrintHTML(y, m, storeName, days, totals, businessDays, rxDays, avgRx, th, td, med) {
+  const usedMed = med.usedMedCost || 0;
+  const orderedMed = med.orderedMedCost || 0;
+  const medDiffVal = usedMed - orderedMed;
+
+  let rows = days.map(({ d, dt, e }) => {
+    const dow = dt.getDay();
+    const dowStr = DAYS_JA[dow];
+    if (e) return `<tr>
+      <td style="border:1px solid #ddd;padding:5px;text-align:center;">${d}（${dowStr}）</td>
+      <td style="border:1px solid #ddd;padding:5px;text-align:center;">${e.prescriptions||0}</td>
+      <td style="border:1px solid #ddd;padding:5px;text-align:center;">${e.newPatients||0}</td>
+      <td ${td}>¥${fmt(e.bookSales)}</td>
+      <td style="border:1px solid #ddd;padding:5px;text-align:right;font-weight:bold;">¥${fmt(e.totalSales)}</td>
+      <td ${td}>¥${fmt(e.bookIncome)}</td>
+      <td ${td}>¥${fmt(e.cl_total)}</td>
+      <td ${td}>¥${fmt(e.otcCash)}</td>
+      <td ${td}>¥${fmt(e.otcCL)}</td>
+      <td ${td}>¥${fmt(e.refund)}</td>
+      <td ${td}>¥${fmt(e.uncounted)}</td>
+      <td ${td}>¥${fmt(e.laterCash)}</td>
+      <td ${td}>¥${fmt(e.laterCL)}</td>
+      <td style="border:1px solid #ddd;padding:5px;text-align:right;font-weight:bold;color:#137333;">¥${fmt(e.expectedIncome)}</td>
+    </tr>`;
+    return `<tr style="color:#ccc;"><td style="border:1px solid #ddd;padding:5px;text-align:center;">${d}（${dowStr}）</td><td colspan="13" style="border:1px solid #ddd;text-align:center;">—</td></tr>`;
+  }).join('');
+
+  document.getElementById('monthlyPrintContent').innerHTML = `
+<div style="font-family:sans-serif;padding:16px;">
+  <div style="text-align:center;font-size:20px;font-weight:bold;border-bottom:2px solid #1a73e8;padding-bottom:8px;margin-bottom:16px;">
+    月次売上報告書<br><span style="font-size:14px;">${storeName} ／ ${y}年${m+1}月</span>
+  </div>
+  <div style="overflow-x:auto;">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr>
+      ${['日付','処方箋','新規患者','帳票売上','売上総合計','①帳票入金','②CL合計','③OTC現金','④OTC CL','⑤返金','⑥未会計','⑦後日現金','⑧後日CL','入金予定']
+        .map(h => `<th ${th}>${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>${rows}
+      <tr style="background:#fff3e0;font-weight:bold;">
+        <td style="border:1px solid #ddd;padding:5px;text-align:center;">合計（${businessDays}日）</td>
+        <td style="border:1px solid #ddd;padding:5px;text-align:center;">${totals.prescriptions}</td>
+        <td style="border:1px solid #ddd;padding:5px;text-align:center;">${totals.newPatients}</td>
+        <td ${td}>¥${fmt(totals.bookSales)}</td>
+        <td style="border:1px solid #ddd;padding:5px;text-align:right;font-weight:bold;">¥${fmt(totals.totalSales)}</td>
+        <td ${td}>¥${fmt(totals.bookIncome)}</td>
+        <td ${td}>¥${fmt(totals.cl_total)}</td>
+        <td ${td}>¥${fmt(totals.otcCash)}</td>
+        <td ${td}>¥${fmt(totals.otcCL)}</td>
+        <td ${td}>¥${fmt(totals.refund)}</td>
+        <td ${td}>¥${fmt(totals.uncounted)}</td>
+        <td ${td}>¥${fmt(totals.laterCash)}</td>
+        <td ${td}>¥${fmt(totals.laterCL)}</td>
+        <td style="border:1px solid #ddd;padding:5px;text-align:right;color:#137333;font-weight:bold;">¥${fmt(totals.expectedIncome)}</td>
+      </tr>
+      <tr style="background:#e8f5e9;font-weight:bold;">
+        <td style="border:1px solid #ddd;padding:5px;text-align:center;">1日平均<br>（処方日${rxDays}日）</td>
+        <td style="border:1px solid #ddd;padding:5px;text-align:center;color:#1a73e8;">${avgRx}枚/日</td>
+        <td colspan="12" style="border:1px solid #ddd;"></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <table style="width:320px;border-collapse:collapse;font-size:13px;margin-top:16px;">
+    <thead>
+      <tr><th colspan="2" style="background:#00695c;color:#fff;padding:6px 10px;text-align:left;border:1px solid #005746;">💊 薬剤費用</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="border:1px solid #ddd;padding:5px 10px;color:#555;width:140px;">使用薬剤費用</td>
+        <td style="border:1px solid #ddd;padding:5px 10px;text-align:right;font-weight:bold;">¥${fmt(usedMed)}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #ddd;padding:5px 10px;color:#555;">発注薬剤費用</td>
+        <td style="border:1px solid #ddd;padding:5px 10px;text-align:right;font-weight:bold;">¥${fmt(orderedMed)}</td>
+      </tr>
+      <tr style="background:#e8f0fe;">
+        <td style="border:1px solid #ddd;padding:5px 10px;font-weight:bold;">差額（使用−発注）</td>
+        <td style="border:1px solid #ddd;padding:5px 10px;text-align:right;font-weight:bold;color:${medDiffVal>=0?'#1a73e8':'#c62828'};">${medDiffVal>=0?'+':''}¥${fmt(medDiffVal)}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>`;
+}
+
+// ===== PRINT FUNCTIONS =====
+// 別ウィンドウで印刷することでCSS干渉を排除
+
+function openPrintWindow(bodyHTML, pageSize, zoom) {
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) { showToast('ポップアップが許可されていません'); return; }
+  win.document.write(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: ${pageSize}; margin: 5mm; }
+  html { zoom: ${zoom}; }
+  body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 11px; background: #fff; }
+  table { border-collapse: collapse; width: 100%; }
+</style>
+</head>
+<body>${bodyHTML}</body>
+</html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 400);
+}
+
+function printDaily() {
+  // 日報タブ・日次入力タブどちらからでも動作
+  const sel = document.getElementById('printDateSelect');
+
+  // セレクトが未設定なら最新データで更新
+  if (!sel.value) {
+    const entries = getAllEntries(currentStoreId).sort((a,b) => b.date.localeCompare(a.date));
+    sel.innerHTML = '<option value="">-- 日付を選択 --</option>' +
+      entries.map(e => `<option value="${e.date}">${e.date}</option>`).join('');
+    const entryDate = document.getElementById('entryDate').value;
+    if (entryDate && entries.find(e => e.date === entryDate)) {
+      sel.value = entryDate;
+    } else if (entries.length > 0) {
+      sel.value = entries[0].date;
+    }
+  }
+
+  const dateStr = sel.value || document.getElementById('entryDate').value;
+  if (!dateStr) { showToast('日付を選択してください'); return; }
+
+  const entry = getEntry(currentStoreId, dateStr);
+  if (!entry) { showToast('データがありません'); return; }
+
+  const storeName = getStores().find(s => s.id === currentStoreId)?.name || '';
+  openPrintWindow(buildDailyPrintHTML(entry, storeName), 'A4 portrait', 0.78);
+}
+
+function printMonthly() {
+  // renderMonthlyPrint は非同期のため、完了後に印刷ウィンドウを開く
+  const key = getMedCostKey();
+  monthlyExtrasCol.doc(key).get().then(doc => {
+    const y = monthlyYear, m = monthlyMonth;
+    const storeName = getStores().find(s => s.id === currentStoreId)?.name || '';
+    const { days, totals, businessDays, rxDays } = buildMonthlyData(currentStoreId, y, m);
+    const avgRx = rxDays > 0 ? Math.round(totals.prescriptions / rxDays) : 0;
+    const th = `style="background:#1a73e8;color:#fff;padding:5px 4px;border:1px solid #1565c0;text-align:center;"`;
+    const td = `style="border:1px solid #ddd;padding:5px;text-align:right;"`;
+    const med = doc.exists ? doc.data() : {};
+    _buildMonthlyPrintHTML(y, m, storeName, days, totals, businessDays, rxDays, avgRx, th, td, med);
+    setTimeout(() => {
+      const content = document.getElementById('monthlyPrintContent').innerHTML;
+      openPrintWindow(content, 'A4 landscape', 0.7);
+    }, 100);
+  }).catch(() => {
+    const content = document.getElementById('monthlyPrintContent').innerHTML;
+    openPrintWindow(content, 'A4 landscape', 0.7);
+  });
+}
+
+// ===== UTILS =====
+function fmt(n) { return Number(n || 0).toLocaleString('ja-JP'); }
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ===== INIT =====
+function init() {
+  const today = new Date();
+  document.getElementById('entryDate').value = today.toISOString().slice(0,10);
+  onDateChange();
+  initStores();
+}
+</script>
+</body>
+</html>

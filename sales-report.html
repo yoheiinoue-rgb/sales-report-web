@@ -1514,13 +1514,16 @@ function initPayments(storeId) {
   if (paymentsUnsubscribe) paymentsUnsubscribe();
   paymentsUnsubscribe = paymentsCol
     .where('storeId', '==', storeId)
-    .orderBy('payDate', 'desc')
     .onSnapshot(snapshot => {
-      paymentsCache = snapshot.docs.map(d => d.data());
+      paymentsCache = snapshot.docs.map(d => d.data())
+        .sort((a, b) => (b.payDate || '').localeCompare(a.payDate || ''));
       if (document.getElementById('panel-payment').classList.contains('active')) {
         renderPaymentList();
       }
-    }, err => console.error('Payments error:', err));
+    }, err => {
+      console.error('Payments error:', err);
+      showToast('入金データの取得に失敗しました: ' + err.message);
+    });
 }
 
 function savePayment() {

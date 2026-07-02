@@ -613,6 +613,7 @@ let entriesUnsubscribe = null;
 let banksCache = [];
 let paymentsCache = []; // for current store
 let paymentsUnsubscribe = null;
+let banksUnsubscribe = null;
 
 // ===== SYNC STATUS =====
 function setSyncStatus(status) {
@@ -647,6 +648,7 @@ function initStores() {
     refreshStoreSelect();
     listenToStoreEntries(currentStoreId);
     initPayments(currentStoreId);
+    initBanks(currentStoreId);
     document.getElementById('loadingOverlay').classList.remove('show');
     setSyncStatus('synced');
   }, err => {
@@ -670,6 +672,7 @@ function switchStore(id) {
   localStorage.setItem('currentStoreId', id);
   listenToStoreEntries(id);
   initPayments(id);
+  initBanks(id);
 }
 
 function openStoreMgr() {
@@ -1445,12 +1448,16 @@ function showToast(msg) {
 }
 
 // ===== BANK MASTER =====
-function initBanks() {
-  banksCol.orderBy('name').onSnapshot(snapshot => {
-    banksCache = snapshot.docs.map(d => d.data());
-    renderBankChips();
-    rebuildBankSelects();
-  }, err => console.error('Banks error:', err));
+function initBanks(storeId) {
+  if (banksUnsubscribe) banksUnsubscribe();
+  banksUnsubscribe = banksCol
+    .where('storeId', '==', storeId)
+    .onSnapshot(snapshot => {
+      banksCache = snapshot.docs.map(d => d.data())
+        .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+      renderBankChips();
+      rebuildBankSelects();
+    }, err => console.error('Banks error:', err));
 }
 
 function renderBankChips() {
@@ -1493,7 +1500,7 @@ function addBank() {
   if (!val) return;
   if (banksCache.some(b => b.name === val)) { showToast('すでに登録されています'); return; }
   const id = 'bank_' + Date.now();
-  banksCol.doc(id).set({ id, name: val })
+  banksCol.doc(id).set({ id, storeId: currentStoreId, name: val })
     .then(() => { document.getElementById('newBankName').value = ''; showToast('追加しました'); })
     .catch(() => showToast('エラーが発生しました'));
 }
@@ -1613,7 +1620,6 @@ function init() {
   document.getElementById('filterPayMonth').value = today.toISOString().slice(0,7);
   onDateChange();
   initStores();
-  initBanks();
 }
 </script>
 </body>

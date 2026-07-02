@@ -146,6 +146,26 @@
   @media (max-width: 600px) {
     .form-row label { width: 140px; font-size: 12px; }
   }
+
+  /* ===== PAYMENT TAB ===== */
+  .bank-chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 32px; }
+  .bank-chip { display: inline-flex; align-items: center; gap: 6px; background: #e8f0fe; border: 1px solid #a8c4fb; border-radius: 999px; padding: 4px 12px; font-size: 13px; color: #1a73e8; }
+  .bank-chip-del { background: none; border: none; color: #888; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; transition: color .15s; }
+  .bank-chip-del:hover { color: #d32f2f; }
+  .pay-filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: flex-end; }
+  .pay-filter-bar > div { flex: 1; min-width: 140px; }
+  .pay-filter-bar select, .pay-filter-bar input { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; background: #fff; }
+  .pay-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pay-table th { background: #1a73e8; color: #fff; padding: 7px 8px; text-align: left; border: 1px solid #1557b0; white-space: nowrap; }
+  .pay-table td { padding: 6px 8px; border: 1px solid #ddd; vertical-align: top; }
+  .pay-table tr:nth-child(even) { background: #f5f7ff; }
+  .pay-table tr:hover { background: #e8f0fe; }
+  .pay-table .note-cell { white-space: pre-wrap; max-width: 260px; word-break: break-all; }
+  .pay-form-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+  .pay-form-row label { width: 120px; flex-shrink: 0; font-size: 13px; color: #555; padding-top: 7px; }
+  .pay-form-row input, .pay-form-row select, .pay-form-row textarea { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+  .pay-form-row input:focus, .pay-form-row select:focus, .pay-form-row textarea:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.2); }
+  .pay-form-row textarea { min-height: 64px; resize: vertical; font-family: inherit; }
 </style>
 </head>
 <body>
@@ -183,6 +203,7 @@
   <div class="tab" onclick="showTab('daily-print')">📄 日報</div>
   <div class="tab" onclick="showTab('monthly')">📈 月次レポート</div>
   <div class="tab" onclick="showTab('monthly-print')">📋 月報</div>
+  <div class="tab" onclick="showTab('payment')">💳 入金記録</div>
 </div>
 
 <!-- CALENDAR PANEL -->
@@ -393,6 +414,83 @@
   <div id="monthlyPrintContent"></div>
 </div>
 
+<!-- PAYMENT PANEL -->
+<div class="panel" id="panel-payment">
+  <div class="card">
+    <div class="card-header" style="background:#0277bd;">🏦 入金先マスタ（銀行・口座）</div>
+    <div class="card-body">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="text" id="newBankName" placeholder="例: ○○銀行 △△支店、PayPay等" style="flex:1;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px;">
+        <button class="btn btn-primary btn-sm" onclick="addBank()">追加</button>
+      </div>
+      <div class="bank-chip-list" id="bankChipList">
+        <span style="color:#999;font-size:13px;">未登録</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="background:#2e7d32;">💳 入金記録 — 入力</div>
+    <div class="card-body">
+      <div class="pay-form-row">
+        <label>入金日 <span style="color:#d32f2f;">*</span></label>
+        <input type="date" id="payDate" style="max-width:180px;">
+      </div>
+      <div class="pay-form-row">
+        <label>入金先 <span style="color:#d32f2f;">*</span></label>
+        <select id="payBank">
+          <option value="">選択してください</option>
+        </select>
+      </div>
+      <div class="pay-form-row">
+        <label>備考</label>
+        <textarea id="payNote" placeholder="金額・内容・特記事項など"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button class="btn btn-success" onclick="savePayment()">💾 追加</button>
+        <button class="btn btn-outline btn-sm" onclick="resetPaymentForm()">クリア</button>
+      </div>
+      <div id="payMsg" style="margin-top:8px;font-size:13px;min-height:20px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="background:#6a1b9a;">📋 入金記録一覧</div>
+    <div class="card-body" style="padding-bottom:4px;">
+      <div class="pay-filter-bar">
+        <div>
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">月で絞り込み</label>
+          <input type="month" id="filterPayMonth">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">入金先で絞り込み</label>
+          <select id="filterPayBank">
+            <option value="">すべて</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+          <button class="btn btn-outline btn-sm" onclick="renderPaymentList()">🔍 絞り込み</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="pay-table">
+          <thead>
+            <tr>
+              <th>入金日</th>
+              <th>入金先</th>
+              <th>備考</th>
+              <th>登録日時</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="paymentTbody"></tbody>
+        </table>
+        <div id="paymentEmpty" style="text-align:center;color:#999;padding:32px;display:none;">まだデータがありません</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- LINE SHARE MODAL -->
 <div class="modal-overlay" id="lineModal">
   <div class="line-modal">
@@ -480,6 +578,8 @@ auth.onAuthStateChanged(user => {
 const storesCol = db.collection('stores');
 const entriesCol = db.collection('entries');
 const monthlyExtrasCol = db.collection('monthly_extras');
+const banksCol = db.collection('banks');
+const paymentsCol = db.collection('payments');
 
 // ===== CONSTANTS =====
 const DENOMS = [10000, 5000, 2000, 1000, 500, 100, 50, 10, 5, 1];
@@ -500,6 +600,9 @@ let monthlyMonth = new Date().getMonth();
 let storesCache = [];
 let entriesCache = {}; // { storeId: { dateStr: entryData } }
 let entriesUnsubscribe = null;
+let banksCache = [];
+let paymentsCache = []; // for current store
+let paymentsUnsubscribe = null;
 
 // ===== SYNC STATUS =====
 function setSyncStatus(status) {
@@ -533,6 +636,7 @@ function initStores() {
     }
     refreshStoreSelect();
     listenToStoreEntries(currentStoreId);
+    initPayments(currentStoreId);
     document.getElementById('loadingOverlay').classList.remove('show');
     setSyncStatus('synced');
   }, err => {
@@ -555,6 +659,7 @@ function switchStore(id) {
   currentStoreId = id;
   localStorage.setItem('currentStoreId', id);
   listenToStoreEntries(id);
+  initPayments(id);
 }
 
 function openStoreMgr() {
@@ -660,7 +765,7 @@ function showTab(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
-  const tabs = ['calendar','entry','daily-print','monthly','monthly-print'];
+  const tabs = ['calendar','entry','daily-print','monthly','monthly-print','payment'];
   const idx = tabs.indexOf(name);
   if (idx >= 0) document.querySelectorAll('.tab')[idx].classList.add('active');
 
@@ -668,6 +773,7 @@ function showTab(name) {
   if (name === 'daily-print') renderDailyPrint();
   if (name === 'monthly') renderMonthly();
   if (name === 'monthly-print') renderMonthlyPrint();
+  if (name === 'payment') { renderBankChips(); renderPaymentList(); }
 }
 
 // ===== CALENDAR =====
@@ -1328,12 +1434,163 @@ function showToast(msg) {
   setTimeout(() => el.classList.remove('show'), 2500);
 }
 
+// ===== BANK MASTER =====
+function initBanks() {
+  banksCol.orderBy('name').onSnapshot(snapshot => {
+    banksCache = snapshot.docs.map(d => d.data());
+    renderBankChips();
+    rebuildBankSelects();
+  }, err => console.error('Banks error:', err));
+}
+
+function renderBankChips() {
+  const el = document.getElementById('bankChipList');
+  if (!el) return;
+  if (banksCache.length === 0) {
+    el.innerHTML = '<span style="color:#999;font-size:13px;">未登録</span>';
+    return;
+  }
+  el.innerHTML = banksCache.map(b => `
+    <span class="bank-chip">
+      ${escHtml(b.name)}
+      <button class="bank-chip-del" onclick="deleteBank('${b.id}')" title="削除">✕</button>
+    </span>`).join('');
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function rebuildBankSelects() {
+  ['payBank','filterPayBank'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    while (sel.options.length > 1) sel.remove(1);
+    banksCache.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.name;
+      opt.textContent = b.name;
+      sel.appendChild(opt);
+    });
+    if (banksCache.some(b => b.name === cur)) sel.value = cur;
+  });
+}
+
+function addBank() {
+  const val = document.getElementById('newBankName').value.trim();
+  if (!val) return;
+  if (banksCache.some(b => b.name === val)) { showToast('すでに登録されています'); return; }
+  const id = 'bank_' + Date.now();
+  banksCol.doc(id).set({ id, name: val })
+    .then(() => { document.getElementById('newBankName').value = ''; showToast('追加しました'); })
+    .catch(() => showToast('エラーが発生しました'));
+}
+
+function deleteBank(id) {
+  if (!confirm('この入金先を削除しますか？')) return;
+  banksCol.doc(id).delete().catch(() => showToast('削除エラー'));
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && document.activeElement.id === 'newBankName') {
+    e.preventDefault(); addBank();
+  }
+});
+
+// ===== PAYMENT RECORDS =====
+function initPayments(storeId) {
+  if (paymentsUnsubscribe) paymentsUnsubscribe();
+  paymentsUnsubscribe = paymentsCol
+    .where('storeId', '==', storeId)
+    .orderBy('payDate', 'desc')
+    .onSnapshot(snapshot => {
+      paymentsCache = snapshot.docs.map(d => d.data());
+      if (document.getElementById('panel-payment').classList.contains('active')) {
+        renderPaymentList();
+      }
+    }, err => console.error('Payments error:', err));
+}
+
+function savePayment() {
+  const payDate = document.getElementById('payDate').value;
+  const bank    = document.getElementById('payBank').value;
+  const note    = document.getElementById('payNote').value.trim();
+  const msg     = document.getElementById('payMsg');
+
+  if (!payDate) { msg.innerHTML = '<span style="color:#d32f2f;">入金日を入力してください</span>'; return; }
+  if (!bank)    { msg.innerHTML = '<span style="color:#d32f2f;">入金先を選択してください</span>'; return; }
+
+  const id = 'pay_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  const entry = {
+    id, storeId: currentStoreId,
+    payDate, bank, note,
+    createdAt: new Date().toISOString()
+  };
+  paymentsCol.doc(id).set(entry)
+    .then(() => {
+      showToast('入金記録を追加しました ✓');
+      msg.innerHTML = '<span style="color:#2e7d32;">追加しました ✓</span>';
+      setTimeout(() => { msg.innerHTML = ''; }, 2500);
+      document.getElementById('payNote').value = '';
+    })
+    .catch(err => { console.error(err); msg.innerHTML = '<span style="color:#d32f2f;">保存エラー</span>'; });
+}
+
+function deletePayment(id) {
+  if (!confirm('この入金記録を削除しますか？')) return;
+  paymentsCol.doc(id).delete()
+    .then(() => showToast('削除しました'))
+    .catch(() => showToast('削除エラー'));
+}
+
+function resetPaymentForm() {
+  document.getElementById('payDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('payBank').value = '';
+  document.getElementById('payNote').value = '';
+  document.getElementById('payMsg').innerHTML = '';
+}
+
+function renderPaymentList() {
+  const filterMonth = document.getElementById('filterPayMonth')?.value || '';
+  const filterBank  = document.getElementById('filterPayBank')?.value  || '';
+  let list = paymentsCache;
+  if (filterMonth) list = list.filter(p => p.payDate && p.payDate.startsWith(filterMonth));
+  if (filterBank)  list = list.filter(p => p.bank === filterBank);
+
+  const tbody = document.getElementById('paymentTbody');
+  const empty = document.getElementById('paymentEmpty');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (list.length === 0) {
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  list.forEach(p => {
+    const tr = document.createElement('tr');
+    const createdStr = p.createdAt ? p.createdAt.slice(0,16).replace('T',' ') : '';
+    tr.innerHTML = `
+      <td style="white-space:nowrap;">${escHtml(p.payDate)}</td>
+      <td style="white-space:nowrap;">${escHtml(p.bank)}</td>
+      <td class="note-cell">${escHtml(p.note || '')}</td>
+      <td style="font-size:11px;color:#999;white-space:nowrap;">${escHtml(createdStr)}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deletePayment('${p.id}')">削除</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
 // ===== INIT =====
 function init() {
   const today = new Date();
   document.getElementById('entryDate').value = today.toISOString().slice(0,10);
+  document.getElementById('payDate').value   = today.toISOString().slice(0,10);
+  document.getElementById('filterPayMonth').value = today.toISOString().slice(0,7);
   onDateChange();
   initStores();
+  initBanks();
 }
 </script>
 </body>
